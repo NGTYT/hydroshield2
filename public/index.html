@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Water Quality Monitoring System</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+(function(){var t=null;try{t=localStorage.getItem('theme')}catch(e){}
+if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.dataset.theme=t;})();
+</script>
+<style>
+:root{--navy:#102A43;--blue:#163A5F;--teal:#0D9488;--aqua:#38BDF8;--bg:#F4F7FA;--card:#fff;--text:#172B4D;--text2:#62748A;--border:#DCE5EE;--warn:#D97706;--err:#DC2626;--ok:#15803D;--head:#102A43;--msgbg:#fee2e2;--msgtx:#991b1b;--shadow:0 1px 3px rgba(16,42,67,.08)}
+:root[data-theme=dark]{--bg:#0B1620;--card:#132434;--text:#E6EEF6;--text2:#9FB3C8;--border:#27405A;--head:#0A1A2A;--msgbg:#3b1414;--msgtx:#fca5a5;--shadow:0 1px 3px rgba(0,0,0,.5);color-scheme:dark}
+input,select{background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:8px 12px}
+#themeBtn{background:none;border:1px solid #fff5;color:#fff;border-radius:8px;padding:6px 10px;cursor:pointer;font-size:1rem}
+#themeBtn:hover{background:#ffffff1f}
+.logo{margin-right:auto}
+.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--card);color:var(--text)}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--text);display:flex;flex-direction:column;min-height:100vh}
+.num{font-variant-numeric:tabular-nums}
+header{background:var(--head);color:#fff;display:flex;align-items:center;gap:12px;padding:12px 20px;position:sticky;top:0;z-index:1000}
+.logo{font-weight:700;font-size:1.15rem;display:flex;align-items:center;gap:8px}
+.logo svg{width:24px;height:24px}
+#menuBtn{display:none;background:none;border:1px solid #fff5;color:#fff;border-radius:8px;padding:6px 10px;font-size:1rem;cursor:pointer}
+.layout{display:flex;flex:1}
+nav{width:230px;background:var(--blue);padding:16px 12px;transition:width .2s}
+nav.collapsed{width:0;padding:0;overflow:hidden}
+nav a{display:block;color:#cfe3f5;text-decoration:none;padding:11px 14px;border-radius:10px;margin-bottom:6px;transition:background .15s}
+nav a:hover,nav a:focus-visible{background:#ffffff1f;color:#fff;outline:none}
+nav a.active{background:var(--teal);color:#fff;font-weight:600}
+#collapse{background:none;border:0;color:#fff;cursor:pointer;font-size:1.2rem}
+main{flex:1;padding:24px;max-width:1200px;margin:0 auto;width:100%;min-width:0}
+h1{font-size:1.6rem;margin:0 0 4px}.sub{color:var(--text2);margin:0 0 20px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;box-shadow:var(--shadow)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin-bottom:20px}
+.label{color:var(--text2);font-size:.85rem;display:flex;gap:6px;align-items:center}
+.value{font-size:2.3rem;font-weight:700;margin:8px 0 2px}.unit{font-size:1rem;color:var(--text2);font-weight:500}
+.small{font-size:.82rem;color:var(--text2)}
+.badge{display:inline-block;padding:5px 12px;border-radius:999px;font-size:.8rem;font-weight:600;color:#fff}
+.b-online,.b-safe{background:var(--ok)}.b-offline,.b-unsafe{background:var(--err)}.b-waiting{background:var(--text2)}.b-caution{background:var(--warn)}
+.demo{background:var(--warn);letter-spacing:.04em}
+.warn{color:var(--warn);font-weight:600;font-size:.85rem;margin-top:6px}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:16px}
+button,select,input{font:inherit}
+.btn{background:var(--teal);color:#fff;border:0;border-radius:10px;padding:8px 14px;cursor:pointer;transition:filter .15s}
+.btn:hover{filter:brightness(1.1)}.btn.alt{background:var(--card);color:var(--text);border:1px solid var(--border)}.btn.on{background:var(--blue);color:#fff}
+:focus-visible{outline:2px solid var(--aqua);outline-offset:2px}
+.msg{padding:12px 16px;border-radius:10px;margin-bottom:16px;background:var(--msgbg);color:var(--msgtx);display:none}
+.empty{color:var(--text2);text-align:center;padding:30px 10px}
+.charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:20px}
+.charts .card{height:280px;position:relative}
+.dis{font-size:.85rem;color:var(--text2);border-left:4px solid var(--teal);padding:10px 14px;background:var(--card);border-radius:0 10px 10px 0;margin-top:16px}
+.mapwrap{display:grid;grid-template-columns:1fr 320px;gap:16px}
+#map{height:520px;border-radius:14px;border:1px solid var(--border)}
+.list{max-height:520px;overflow:auto;padding:8px}
+.st{padding:10px;border-radius:10px;cursor:pointer;border-bottom:1px solid var(--border)}
+.st:hover,.st:focus-visible{background:var(--bg)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:.85rem;margin:10px 0}
+.dot{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+footer{text-align:center;color:var(--text2);font-size:.8rem;padding:16px}
+.spin{display:none;width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--teal);border-radius:50%;animation:s .8s linear infinite}
+@keyframes s{to{transform:rotate(360deg)}}
+@media(max-width:800px){
+ #menuBtn{display:block}#collapse{display:none}
+ nav{position:fixed;top:56px;left:0;bottom:0;z-index:999;transform:translateX(-100%);transition:transform .2s;width:230px}
+ nav.open{transform:none}
+ .mapwrap{grid-template-columns:1fr}#map{height:360px}.list{max-height:300px}main{padding:16px}
+}
+</style>
+</head>
+<body>
+<header>
+ <button id="collapse" aria-label="Toggle sidebar">☰</button>
+ <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#38BDF8" stroke-width="2" aria-hidden="true"><path d="M12 3C8 8 5.5 11 5.5 14.5a6.5 6.5 0 0 0 13 0C18.5 11 16 8 12 3z"/></svg>Water Quality Monitoring System</div>
+ <button id="menuBtn" aria-label="Open menu">Menu</button>
+ <button id="themeBtn" aria-label="Switch between dark and light theme"></button>
+</header>
+<div class="layout">
+<nav id="nav" aria-label="Main navigation">
+ <a href="#local" data-p="local">Overview / Local Access</a>
+ <a href="#drinking" data-p="drinking">Public Drinking Water</a>
+ <a href="#supply" data-p="supply">Public Water Supply</a>
+</nav>
+<main id="view" aria-live="polite"></main>
+</div>
+<footer>Water Quality Monitoring System | IoT Educational Project</footer>
+
+<script>
+const $ = s => document.querySelector(s);
+const CFG = { tds: { max: 500 }, turb: { max: 800 }, temp: { min: 5, max: 35 }, ph: { min: 6.5, max: 8.5 } }; // reference ranges (edit to suit)
+const DISCLAIMER = 'Measurements are provided for monitoring and educational purposes. TDS, turbidity, temperature, and pH alone cannot establish whether water is safe to drink. Laboratory testing is required for a complete water-quality assessment.';
+function applyChartTheme() {
+  const d = document.documentElement.dataset.theme === 'dark';
+  Chart.defaults.color = d ? '#9FB3C8' : '#62748A';
+  Chart.defaults.borderColor = d ? '#27405A' : '#DCE5EE';
+}
+function syncThemeBtn() {
+  const d = document.documentElement.dataset.theme === 'dark';
+  $('#themeBtn').textContent = d ? '☀ Light' : '🌙 Dark';
+}
+$('#themeBtn').onclick = () => {
+  const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = t;
+  try { localStorage.setItem('theme', t); } catch (e) {}
+  syncThemeBtn(); applyChartTheme();
+  if ($('#charts')) loadHistory();
+};
+applyChartTheme(); syncThemeBtn();
+let timer = null, charts = [], map = null, range = '24h';
+
+async function api(path) {
+  const r = await fetch(path);
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Request failed (' + r.status + ')');
+  return r.json();
+}
+const fmt = iso => iso ? new Date(iso).toLocaleString() : '—';
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+/* ---------- Router ---------- */
+function route() {
+  const p = (location.hash || '#local').slice(1);
+  clearInterval(timer); charts.forEach(c => c.destroy()); charts = [];
+  if (map) { map.remove(); map = null; }
+  document.querySelectorAll('nav a').forEach(a => a.classList.toggle('active', a.dataset.p === p));
+  $('#nav').classList.remove('open');
+  if (p === 'drinking') demoPage('Public Drinking Water Monitoring', '/api/demo/drinking-water',
+    'All stations and readings on this page are simulated for demonstration. They do not represent verified public drinking-water monitoring data.');
+  else if (p === 'supply') demoPage('Public Water Supply Monitoring', '/api/demo/public-supply',
+    'This page uses simulated demonstration data. It is not connected to actual municipal water-supply monitoring systems.');
+  else localPage();
+}
+addEventListener('hashchange', route);
+$('#menuBtn').onclick = () => $('#nav').classList.toggle('open');
+$('#collapse').onclick = () => $('#nav').classList.toggle('collapsed');
+
+/* ---------- Local Access (real data) ---------- */
+function localPage() {
+  $('#view').innerHTML = `
+  <h1>Local Water Quality Monitoring</h1>
+  <p class="sub">Genuine readings from your physical monitoring device.</p>
+  <div class="toolbar"><span id="badge" class="badge b-waiting">Loading…</span><span class="spin" id="spin"></span>
+   <button class="btn alt" id="refresh">Refresh</button><button class="btn alt" id="csv">Export CSV</button></div>
+  <div class="msg" id="err" role="unsafe"></div>
+  <div class="grid">
+   <div class="card"><div class="label">💧 TDS</div><div class="value num" id="tds">—</div><div class="small">Reference: below ${CFG.tds.max} ppm</div><div class="small" id="tdsT"></div><div class="warn" id="tdsW"></div></div>
+   <div class="card"><div class="label">🌫️ Turbidity (raw sensor reading)</div><div class="value num" id="turb">—</div><div class="small">Uncalibrated raw value, not NTU</div><div class="small" id="turbT"></div><div class="warn" id="turbW"></div></div>
+   <div class="card"><div class="label">🌡️ Water temperature</div><div class="value num" id="temp">—</div><div class="small">Operating range: ${CFG.temp.min}–${CFG.temp.max} °C</div><div class="small" id="tempT"></div><div class="warn" id="tempW"></div></div>
+   <div class="card"><div class="label">🧪 pH</div><div class="value num" id="ph">—</div><div class="small">Reference: ${CFG.ph.min}–${CFG.ph.max}</div><div class="small" id="phT"></div><div class="warn" id="phW"></div></div>
+  </div>
+  <div class="card" style="margin-bottom:20px"><strong>Device information</strong>
+   <div class="grid" style="margin:12px 0 0">
+    <div><div class="small">Device name</div>Water Quality Node 01</div><div><div class="small">Connection</div><span id="conn">—</span></div>
+    <div><div class="small">Last successful reading</div><span id="last">—</span></div><div><div class="small">Next expected reading</div><span id="next">—</span></div>
+    <div><div class="small">Submission interval</div>10 minutes</div></div></div>
+  <div class="toolbar" id="ranges" role="group" aria-label="Time range">${['1h', '6h', '24h', '7d', '30d'].map(r => `<button class="btn alt ${r === range ? 'on' : ''}" data-r="${r}">${r === '1h' ? '1 hour' : r === '6h' ? '6 hours' : r === '24h' ? '24 hours' : r === '7d' ? '7 days' : '30 days'}</button>`).join('')}</div>
+  <div class="charts" id="charts"></div>
+  <p class="dis">${DISCLAIMER}</p>`;
+  $('#refresh').onclick = loadLocal;
+  $('#csv').onclick = exportCsv;
+  $('#ranges').onclick = e => { const r = e.target.dataset.r; if (!r) return; range = r;
+    document.querySelectorAll('#ranges button').forEach(b => b.classList.toggle('on', b.dataset.r === r)); loadHistory(); };
+  loadLocal(); timer = setInterval(loadLocal, 30000);
+}
+
+async function loadLocal() {
+  $('#spin').style.display = 'inline-block';
+  try {
+    const [st, lt] = await Promise.all([api('/api/local/status'), api('/api/local/latest')]);
+    $('#err').style.display = 'none';
+    const label = { online: 'Device Online', offline: 'Device Offline', waiting: 'Waiting for First Reading' }[st.status];
+    $('#badge').className = 'badge b-' + st.status; $('#badge').textContent = label;
+    $('#conn').textContent = label; $('#last').textContent = fmt(st.lastReadingAt); $('#next').textContent = fmt(st.nextExpectedAt);
+    const r = lt.reading;
+    if (r) {
+      const t = 'Updated ' + fmt(r.receivedAt) + (st.status === 'offline' ? ' (last known value, device offline)' : '');
+      $('#tds').innerHTML = r.tds + ' <span class="unit">ppm</span>';
+      $('#turb').innerHTML = r.turbidityRaw + ' <span class="unit">raw</span>';
+      $('#temp').innerHTML = r.temperature.toFixed(1) + ' <span class="unit">°C</span>';
+      ['tdsT', 'turbT', 'tempT', 'phT'].forEach(i => $('#' + i).textContent = t);
+      $('#tdsW').textContent = r.tds > CFG.tds.max ? '⚠ Above configured TDS threshold' : '';
+      $('#turbW').textContent = r.turbidityRaw > CFG.turb.max ? '⚠ Above configured turbidity threshold' : '';
+      $('#ph').textContent = r.ph == null ? '—' : r.ph.toFixed(2);
+      $('#phW').textContent = r.ph != null && (r.ph < CFG.ph.min || r.ph > CFG.ph.max) ? '⚠ Outside reference range' : '';
+      $('#tempW').textContent = (r.temperature < CFG.temp.min || r.temperature > CFG.temp.max) ? '⚠ Outside operating range' : '';
+    }
+    await loadHistory();
+  } catch (e) { $('#err').textContent = 'Backend unavailable: ' + e.message; $('#err').style.display = 'block'; $('#badge').className = 'badge b-offline'; $('#badge').textContent = 'Backend Unreachable'; }
+  $('#spin').style.display = 'none';
+}
+
+async function loadHistory() {
+  const box = $('#charts'); if (!box) return;
+  try {
+    const { readings } = await api('/api/local/history?range=' + range);
+    charts.forEach(c => c.destroy()); charts = [];
+    if (!readings.length) { box.innerHTML = '<div class="card empty" style="grid-column:1/-1">No readings in this time range yet.</div>'; return; }
+    box.innerHTML = '<div class="card"><canvas id="c1"></canvas></div><div class="card"><canvas id="c2"></canvas></div><div class="card"><canvas id="c3"></canvas></div><div class="card"><canvas id="c4"></canvas></div>';
+    const labels = readings.map(r => new Date(r.receivedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }));
+    [['c1', 'TDS (ppm)', 'tds', '#0D9488'], ['c2', 'Turbidity (raw)', 'turbidityRaw', '#38BDF8'], ['c3', 'Temperature (°C)', 'temperature', '#D97706'], ['c4', 'pH', 'ph', '#7C3AED']].forEach(([id, l, k, c]) =>
+      charts.push(new Chart($('#' + id), { type: 'line', data: { labels, datasets: [{ label: l, data: readings.map(r => r[k]), borderColor: c, backgroundColor: c + '22', fill: true, tension: .3, pointRadius: readings.length > 100 ? 0 : 3 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: l } }, scales: { x: { ticks: { maxTicksLimit: 6 } } } } })));
+  } catch (e) { box.innerHTML = '<div class="card empty" style="grid-column:1/-1">Could not load history: ' + esc(e.message) + '</div>'; }
+}
+
+async function exportCsv() {
+  try {
+    const { readings } = await api('/api/local/history?range=' + range);
+    if (!readings.length) return unsafe('No readings to export for this range.');
+    const rows = ['received_at,tds_ppm,turbidity_raw,temperature_c,ph', ...readings.map(r => [r.receivedAt, r.tds, r.turbidityRaw, r.temperature, r.ph ?? ''].join(','))];
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([rows.join('\n')], { type: 'text/csv' }));
+    a.download = 'aquasense-' + range + '.csv'; a.click();
+  } catch (e) { unsafe('Export failed: ' + e.message); }
+}
+
+/* ---------- Demo map pages (simulated data) ---------- */
+const COLORS = { safe: '#15803D', caution: '#D97706', unsafe: '#DC2626' };
+async function demoPage(title, url, note) {
+  $('#view').innerHTML = `<h1>${title}</h1><p class="sub"><span class="badge demo">Made By Sai,Shakeel,Sharvesh</span></p>
+  <div class="msg" id="err" role="unsafe"></div>
+  <div class="toolbar"><input id="q" type="search" placeholder="Search simulated stations" aria-label="Search stations" style="flex:1;min-width:180px">
+   <select id="f" aria-label="Filter by demonstration status"><option value="">All statuses</option><option value="safe">safe</option><option value="caution">caution</option><option value="unsafe">unsafe</option></select></div>
+  <div class="legend"><span><i class="dot" style="background:#15803D"></i>safe (simulated)</span><span><i class="dot" style="background:#D97706"></i>caution (simulated)</span><span><i class="dot" style="background:#DC2626"></i>unsafe (simulated)</span></div>
+  <div class="mapwrap"><div id="map" role="application" aria-label="Map of simulated stations"></div><div class="card list" id="list"></div></div>
+  <p class="dis">${note}</p>`;
+  let stations;
+  try { stations = (await api(url)).stations; } catch (e) { $('#err').textContent = 'Could not load demo data: ' + e.message; $('#err').style.display = 'block'; return; }
+  map = L.map('map').setView([8.7139, 77.7567], 12);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
+  const layer = L.layerGroup().addTo(map);
+  const render = () => {
+    const q = $('#q').value.toLowerCase(), f = $('#f').value;
+    const rows = stations.filter(s => s.name.toLowerCase().includes(q) && (!f || s.status === f));
+    layer.clearLayers(); const markers = {};
+    rows.forEach(s => {
+      const m = L.circleMarker([s.lat, s.lng], { radius: 10, color: '#fff', weight: 2, fillColor: COLORS[s.status], fillOpacity: .95 }).addTo(layer);
+      m.bindPopup(`<strong>${esc(s.name)}</strong><br><em>Fictional station — simulated</em><br>Simulated TDS: ${s.tds} ppm<br>Simulated turbidity: ${s.turbidity} NTU (simulated)<br>Simulated temperature: ${s.temperature} °C<br>Simulated pH: ${s.ph}<br>Simulated update: ${fmt(s.updatedAt)}<br>Demo status: ${s.status}`);
+      markers[s.id] = m;
+    });
+    $('#list').innerHTML = rows.length ? rows.map(s => `<div class="st" tabindex="0" data-id="${s.id}"><strong>${esc(s.name)}</strong> <span class="badge b-${s.status}">${s.status}</span><div class="small num">SIM · ${s.tds} ppm · ${s.turbidity} NTU · ${s.temperature} °C · pH ${s.ph}</div></div>`).join('') : '<div class="empty">No stations match.</div>';
+    $('#list').onclick = $('#list').onkeydown = e => { if (e.key && e.key !== 'Enter') return; const el = e.target.closest('.st'); if (!el) return;
+      const m = markers[el.dataset.id]; map.setView(m.getLatLng(), 13); m.openPopup(); };
+  };
+  $('#q').oninput = $('#f').onchange = render; render();
+}
+route();
+</script>
+</body>
+</html>
