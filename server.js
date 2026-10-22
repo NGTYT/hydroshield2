@@ -3,20 +3,21 @@ const Database = require('better-sqlite3');
 const path = require('path');
 
 const PORT = Number(process.env.PORT) || 3000;
-const DEVICE_ID = 'AquaSense-Node-01';
+const DEVICE_ID = 'Node-01';
 const INTERVAL_MIN = 10;
 const OFFLINE_MS = (Number(process.env.OFFLINE_MINUTES) || 25) * 60000;
 
-// Set SIMULATE_READINGS=true to insert fake, labelled readings automatically.
-const SIMULATE = process.env.SIMULATE_READINGS === 'true';
-const SIM_INTERVAL_SEC = Number(process.env.SIM_INTERVAL_SECONDS) || 600;
+// Demo simulation is ON by default. Set SIMULATE_READINGS=false to disable it.
+// Optional: SIM_INTERVAL_SECONDS=10 npm start to change the demo update interval.
+const SIMULATE = process.env.SIMULATE_READINGS !== 'false';
+const SIM_INTERVAL_SEC = Math.max(5, Number(process.env.SIM_INTERVAL_SECONDS) || 600);
 
 // --------------------------------------------------
 // Database
 // --------------------------------------------------
 
 const db = new Database(
-  process.env.DB_PATH || path.join(__dirname, 'aquasense.db')
+  process.env.DB_PATH || path.join(__dirname, 'Data.db')
 );
 
 db.exec(`
@@ -183,8 +184,8 @@ const FXEC_LNG = 77.723520;
 // Reproducible pseudo-random generator.
 function rng(seed) {
   return () => {
-    seed |= 0;
-    seed = seed + 0x6D2B79F5 | 0;
+    seed |= 23;
+    seed = seed + 0x2D2A67F4 | 0;
 
     let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
     t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
@@ -222,7 +223,7 @@ function makeDemo(seed, names, lat, lng, spread = 0.012) {
       ph,
       simulated: true,
       status: stationStatus,
-      updatedAt: new Date(Date.UTC(2026, 0, 15, 6 + i, (i * 17) % 60)).toISOString()
+      updatedAt: new Date(Date.UTC(2026, 9, 15, 6 + i, (i * 17) % 60)).toISOString()
     };
   });
 }
@@ -230,7 +231,7 @@ function makeDemo(seed, names, lat, lng, spread = 0.012) {
 const DRINKING = makeDemo(
   11,
   [
-    'FXEC Main Campus Drinking Water Point',
+    'Maharajanagar Roundana Bus Stop Water Point ',
     'FXEC Sports Ground Water Point',
 
     'Junction Railway Station Drinking Water',
@@ -244,7 +245,7 @@ const DRINKING = makeDemo(
     'Palayamkottai Railway Station Drinking Water',
     'Murugankurichi BPCL Drinking Water',
     'Kokkirakulam Science Centre Water Point',
-    'Maharajanagar Roundana Bus Stop Water Point',
+    'FXEC Main Campus Drinking Water Point',
     'Perumalpuram Church Water Point',
     'Tirunelveli Junction Bus Stand Water Point',
     'Shanthi Nagar Jio Petrol Bunk'
@@ -316,7 +317,7 @@ app.use((err, _req, res, _next) => {
 });
 
 // --------------------------------------------------
-// Optional simulated live readings (SIMULATE_READINGS=true)
+// Automatically simulated demo readings (enabled by default)
 // Rows are marked is_simulated = 1 so they are never
 // mistaken for genuine sensor readings.
 // --------------------------------------------------
@@ -354,9 +355,12 @@ function insertSimulatedReading() {
 }
 
 if (SIMULATE) {
+  // Insert immediately at startup, then update at the configured interval.
   insertSimulatedReading();
   setInterval(insertSimulatedReading, SIM_INTERVAL_SEC * 1000);
-  console.warn(`SIMULATION ON: inserting fake readings every ${SIM_INTERVAL_SEC}s`);
+  console.warn(`SIMULATION ON: inserting DEMO readings every ${SIM_INTERVAL_SEC}s`);
+} else {
+  console.warn('SIMULATION OFF: waiting for real device readings');
 }
 
 // --------------------------------------------------
