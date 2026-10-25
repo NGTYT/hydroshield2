@@ -1,0 +1,191 @@
+
+#include <OneWire.h>
+#include <DallasTemperature.h>
+#include <SoftwareSerial.h>
+#include <math.h>
+
+// ---------- SENSOR PINS ----------
+const byte PH_PIN = A0;
+const byte TDS_PIN = A1;
+const byte TURBIDITY_PIN = A2;
+const byte TEMP_PIN = 2;
+
+// Arduino D11 TX -> voltage divider -> NodeMCU D6 RX
+SoftwareSerial nodeSerial(10, 11);
+
+OneWire oneWire(TEMP_PIN);
+DallasTemperature tempSensor(&oneWire);
+
+// ---------- ADC SETTINGS ----------
+const float ADC_REFERENCE = 5.0;
+const float ADC_MAX = 1023.0;
+
+// ---------- PH CALIBRATION ----------
+// Replace these with your actual buffer calibration voltages.
+const float PH7_VOLTAGE = 2.500;
+const float PH4_VOLTAGE = 3.040;
+
+// ---------- TDS SETTINGS ----------
+const float TDS_CALIBRATION_FACTOR = 1.0;
+
+// ---------- TIMING ----------
+const unsigned long SEND_INTERVAL = 10000;
+unsigned long lastSend = 0;
+
+// ---------- ANALOG READING ----------
+int readAnalogAverage(byte pin) {
+  long total = 0;
+
+  for (byte i = 0; i < 10; i++) {
+    total += analogRead(pin);
+    delay(10);
+  }
+
+  return total / 10;
+}
+
+float readVoltage(byte pin) {
+  return readAnalogAverage(pin) *
+         (ADC_REFERENCE / ADC_MAX);
+}
+
+// ---------- PH CALCULATION ----------
+float calculatePH(float voltage) {
+  if (fabs(PH7_VOLTAGE - PH4_VOLTAGE) < 0.001) {
+    return NAN;
+  }
+
+  float slope = (7.0 - 4.0) /
+                (PH7_VOLTAGE - PH4_VOLTAGE);
+
+  return 7.0 + (voltage - PH7_VOLTAGE) * slope;
+}
+
+// ---------- TDS CALCULATION ----------
+float calculateTDS(float voltage, float temperatureC) {
+  float compensation =
+      1.0 + 0.02 * (temperatureC - 25.0);
+
+  float v = voltage / compensation;
+
+  float tds =
+      (133.42 * v * v * v
+       - 255.86 * v * v
+       + 857.39 * v) * 0.5;
+
+  tds *= TDS_CALIBRATION_FACTOR;
+
+  return tds < 0 ? 0 : tds;
+}
+
+void setup() {
+  Serial.begin(115200);
+  nodeSerial.begin(9600);
+
+  tempSensor.begin();
+
+  Serial.println("HydroShield sensor controller started");
+  Serial.print("DS18B20 detected: ");
+  Serial.println(tempSensor.getDeviceCount());
+}
+
+void loop() {
+  if (millis() - lastSend < SEND_INTERVAL) {
+    return;
+  }
+
+  lastSend = millis();
+
+  // Read each sensor independently.
+  float phVoltage = readVoltage(PH_PIN);
+  float tdsVoltage = readVoltage(TDS_PIN);
+  int turbidityRaw = readAnalogAverage(TURBIDITY_PIN);
+
+  // Temperature can fail without stopping other sensors.
+  tempSensor.requestTemperatures();
+  float temperatureC = tempSensor.getTempCByIndex(0);
+
+  bool tempValid =
+      temperatureC != DEVICE_DISCONNECTED_C &&
+      isfinite(temperatureC) &&
+      temperatureC >= -55.0 &&
+      temperatureC <= 125.0;
+
+  // Calculate TDS even when temperature is unavailable.
+  // If temperature fails, use 25 C as the calculation
+  // reference only; do NOT report it as measured temperature.
+  float tdsReferenceTemp = tempValid ? temperatureC : 25.0;
+  float tdsPpm = calculateTDS(tdsVoltage, tdsReferenceTemp);
+
+  float ph = calculatePH(phVoltage);
+
+  // Avoid treating a saturated pH output as valid.
+  bool phValid =
+      isfinite(ph) &&
+      ph >= 0.0 &&
+      ph <= 14.0 &&
+      phVoltage >= 0.05 &&
+      phVoltage <= 4.95;
+
+  bool tdsValid =
+      isfinite(tdsPpm) &&
+      tdsPpm >= 0.0 &&
+      tdsPpm <= 100000.0;
+
+  // ---------- SERIAL MONITOR ----------
+  Serial.println("\n------ HydroShield ------");
+
+  Serial.print("pH voltage: ");
+  Serial.print(phVoltage, 3);
+  Serial.println(" V");
+
+  Serial.print("pH: ");
+  if (phValid) Serial.println(ph, 2);
+  else Serial.println("Unavailable - check/calibrate sensor");
+
+  Serial.print("TDS: ");
+  if (tdsValid) {
+    Serial.print(tdsPpm, 1);
+    Serial.println(" ppm");
+    if (!tempValid) {
+      Serial.println("Note: TDS uses 25 C reference; temperature unavailable");
+    }
+  } else {
+    Serial.println("Unavailable");
+  }
+
+  Serial.print("Turbidity raw: ");
+  Serial.println(turbidityRaw);
+
+  Serial.print("Temperature: ");
+  if (tempValid) {
+    Serial.print(temperatureC, 2);
+    Serial.println(" C");
+  } else {
+    Serial.println("Unavailable");
+  }
+
+  // ---------- SEND TO NODEMCU ----------
+// Format: ph,tdsPpm,turbidityRaw,temperatureC
+
+nodeSerial.print(phValid ? ph : -1.0, 2);
+nodeSerial.print(',');
+
+nodeSerial.print(tdsValid ? tdsPpm : -1.0, 1);
+nodeSerial.print(',');
+
+nodeSerial.print(turbidityRaw);
+nodeSerial.print(',');
+
+nodeSerial.println(tempValid ? temperatureC : -999.00, 2);
+
+  // Debug on Arduino USB Serial Monitor
+  Serial.print("CSV transmitted: ");
+  Serial.print(phValid ? ph : -1.0, 2);
+  Serial.print(',');
+  Serial.print(tdsValid ? tdsPpm : -1.0, 1);
+  Serial.print(',');
+  Serial.print(turbidityRaw);
+  Serial.print(',');
+  Serial.println(tempValid ? temperatureC : -999.00, 2);
+}
