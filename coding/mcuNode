@@ -1,0 +1,256 @@
+
+#include <ESP8266WiFi.h>
+#include <ESP8266HTTPClient.h>
+#include <SoftwareSerial.h>
+#include <ArduinoJson.h>
+#include <math.h>
+#include <stdlib.h>
+
+// ---------- Wi-Fi ----------
+const char* WIFI_SSID = "Hydroshield";
+const char* WIFI_PASSWORD = "1118";
+
+// Laptop's local IPv4 address
+const char* SERVER_URL =
+  "http://192.168.29.18:3000/api/sensor/readings";
+
+// Must match DEVICE_TOKEN on your laptop backend
+const char* DEVICE_TOKEN = "hydroshield";
+const char* DEVICE_ID = "Node-01";
+
+// RX = D6, TX = D5
+// Arduino Uno D11 (TX) -> voltage divider -> NodeMCU D6 (RX)
+// NodeMCU D5 (TX) is unused in this sketch.
+SoftwareSerial arduinoSerial(D6, D5);
+
+unsigned long lastWiFiCheck = 0;
+
+// ---------- Wi-Fi connection ----------
+void connectWiFi() {
+  if (WiFi.status() == WL_CONNECTED) return;
+
+  Serial.println("Connecting to Wi-Fi...");
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  unsigned long start = millis();
+
+  while (WiFi.status() != WL_CONNECTED &&
+         millis() - start < 15000) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println();
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.print("Wi-Fi connected. IP: ");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("Wi-Fi connection failed.");
+  }
+}
+
+// ---------- Parse a numeric field ----------
+bool parseNumber(String value, float &result) {
+  value.trim();
+
+  if (value.length() == 0) return false;
+
+  const char* s = value.c_str();
+  char* endPointer = nullptr;
+
+  double parsed = strtod(s, &endPointer);
+
+  if (endPointer == s || *endPointer != '\0') {
+    return false;
+  }
+
+  if (!isfinite(parsed)) return false;
+
+  result = (float)parsed;
+
+  return isfinite(result);
+}
+
+// ---------- Upload sensor reading ----------
+void sendReading(String line) {
+  // DEBUG: show exactly what arrived from the Arduino
+  Serial.print("RAW DATA: [");
+  Serial.print(line);
+  Serial.println("]");
+
+  line.trim();
+
+  if (line.length() == 0) {
+    Serial.println("Empty CSV line; skipped.");
+    return;
+  }
+
+  // Expected CSV:
+  // pH,TDS,turbidityRaw,temperature
+  float values[4];
+  int start = 0;
+
+  for (int i = 0; i < 4; i++) {
+    int comma = line.indexOf(',', start);
+    String part;
+
+    if (i < 3) {
+      if (comma < 0) {
+        Serial.print("Invalid CSV: missing comma for field ");
+        Serial.println(i + 1);
+        Serial.println("Expected: pH,TDS,turbidityRaw,temperature");
+        return;
+      }
+
+      part = line.substring(start, comma);
+      start = comma + 1;
+    } else {
+      if (comma >= 0) {
+        Serial.println("Invalid CSV: too many fields");
+        return;
+      }
+
+      part = line.substring(start);
+    }
+
+    part.trim();
+
+    Serial.print("Field ");
+    Serial.print(i + 1);
+    Serial.print(": [");
+    Serial.print(part);
+    Serial.println("]");
+
+    if (!parseNumber(part, values[i])) {
+      Serial.print("Invalid numeric field ");
+      Serial.print(i + 1);
+      Serial.print(": [");
+      Serial.print(part);
+      Serial.println("]");
+      return;
+    }
+  }
+
+  float ph = values[0];
+  float tds = values[1];
+  float turbidityRaw = values[2];
+  float temperature = values[3];
+
+  Serial.println("CSV parsed successfully.");
+
+  // ---------- Build JSON ----------
+  StaticJsonDocument<256> doc;
+
+  doc["deviceId"] = DEVICE_ID;
+
+  if (ph >= 0 && ph <= 14) {
+    doc["ph"] = ph;
+  } else {
+    doc["ph"] = nullptr;
+  }
+
+  if (tds >= 0 && tds <= 100000) {
+    doc["tds"] = tds;
+  } else {
+    doc["tds"] = nullptr;
+  }
+
+  if (turbidityRaw >= 0 && turbidityRaw <= 1023) {
+    doc["turbidityRaw"] = (int)turbidityRaw;
+  } else {
+    doc["turbidityRaw"] = nullptr;
+  }
+
+  // Raw ADC value is not calibrated NTU.
+  doc["turbidityNtu"] = nullptr;
+
+  if (temperature >= -55 &&
+      temperature <= 125 &&
+      temperature != -999) {
+    doc["temperature"] = temperature;
+  } else {
+    doc["temperature"] = nullptr;
+  }
+
+  // ---------- Check Wi-Fi ----------
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("No Wi-Fi; reading not uploaded.");
+    return;
+  }
+
+  // ---------- HTTP POST ----------
+  WiFiClient client;
+  HTTPClient http;
+
+  // Kept compatible with the older ESP8266 core API.
+  if (!http.begin(String(SERVER_URL))) {
+    Serial.println("Could not start HTTP request.");
+    return;
+  }
+
+  http.setTimeout(5000);
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("X-Device-Token", DEVICE_TOKEN);
+
+  String payload;
+  serializeJson(doc, payload);
+
+  Serial.print("Sending JSON: ");
+  Serial.println(payload);
+
+  int statusCode = http.POST(payload);
+
+  if (statusCode > 0) {
+    Serial.print("Server HTTP status: ");
+    Serial.println(statusCode);
+
+    String response = http.getString();
+    Serial.print("Server response: ");
+    Serial.println(response);
+
+    if (statusCode >= 200 && statusCode < 300) {
+      Serial.println("Upload successful.");
+    } else {
+      Serial.println("Server rejected or could not process the reading.");
+      Serial.println("Check the server response above.");
+    }
+  } else {
+    Serial.print("HTTP error: ");
+    Serial.println(http.errorToString(statusCode));
+  }
+
+  http.end();
+}
+
+// ---------- Setup ----------
+void setup() {
+  Serial.begin(115200);
+
+  arduinoSerial.begin(9600);
+  arduinoSerial.setTimeout(1000);
+
+  Serial.println();
+  Serial.println("==============================");
+  Serial.println("HydroShield Node-01 starting");
+  Serial.println("==============================");
+
+  connectWiFi();
+}
+
+// ---------- Main loop ----------
+void loop() {
+  if (WiFi.status() != WL_CONNECTED &&
+      millis() - lastWiFiCheck >= 5000) {
+    lastWiFiCheck = millis();
+    connectWiFi();
+  }
+
+  if (arduinoSerial.available()) {
+    String line = arduinoSerial.readStringUntil('\n');
+    sendReading(line);
+  }
+
+  delay(5);
+}
